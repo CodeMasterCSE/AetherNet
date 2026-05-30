@@ -186,7 +186,10 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> with SingleTi
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Select Your Role', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        title: Text(
+          widget.mode == AppMode.classroom ? 'Classroom Mode' : 'Exam Mode',
+          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
@@ -227,7 +230,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> with SingleTi
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Text(
-                      'Welcome to MeshExam',
+                      'Select Your Role',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 28,

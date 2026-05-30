@@ -63,7 +63,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   gradient: LinearGradient(
                     colors: const [
                       Color(0xFF0F172A),
-                      Color(0xFF3B0764),
+                      Color(0xFF1E293B),
                       Color(0xFF0F172A),
                     ],
                     stops: [0.0, _bgController.value, 1.0],
@@ -105,7 +105,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     GestureDetector(
                       onTap: () => _navigateToRoleSelection(AppMode.classroom),
                       child: GlassCard(
-                        color: const Color(0x339333EA), // Purple accent
+                        color: const Color(0x1A3B82F6), // Blue accent
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 32.0, horizontal: 24.0),
                           child: Row(
@@ -113,10 +113,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                               Container(
                                 padding: const EdgeInsets.all(16),
                                 decoration: const BoxDecoration(
-                                  color: Color(0x669333EA),
+                                  color: Color(0x333B82F6),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.co_present_rounded, size: 48, color: Colors.purpleAccent),
+                                child: const Icon(Icons.co_present_rounded, size: 48, color: Colors.blueAccent),
                               ),
                               const SizedBox(width: 24),
                               const Expanded(
@@ -142,7 +142,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     GestureDetector(
                       onTap: () => _navigateToRoleSelection(AppMode.exam),
                       child: GlassCard(
-                        color: const Color(0x1A3B82F6),
+                        color: const Color(0x1A10B981), // Green accent
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 32.0, horizontal: 24.0),
                           child: Row(
@@ -150,10 +150,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                               Container(
                                 padding: const EdgeInsets.all(16),
                                 decoration: const BoxDecoration(
-                                  color: Color(0x333B82F6),
+                                  color: Color(0x3310B981),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.assignment_rounded, size: 48, color: Colors.blueAccent),
+                                child: const Icon(Icons.assignment_rounded, size: 48, color: Colors.greenAccent),
                               ),
                               const SizedBox(width: 24),
                               const Expanded(
