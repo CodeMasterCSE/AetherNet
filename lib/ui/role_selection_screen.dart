@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../features/teacher/teacher_dashboard.dart';
 import '../features/student/student_dashboard.dart';
+import '../features/teacher/classroom_teacher_dashboard.dart';
+import '../features/student/classroom_discovery_screen.dart';
 import '../widgets/glass_card.dart';
 import '../storage/local_storage.dart';
+import 'home_screen.dart';
 
 class RoleSelectionScreen extends StatefulWidget {
-  const RoleSelectionScreen({super.key});
+  final AppMode mode;
+  const RoleSelectionScreen({super.key, required this.mode});
 
   @override
   State<RoleSelectionScreen> createState() => _RoleSelectionScreenState();
@@ -69,15 +73,17 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> with SingleTi
                     const SizedBox(height: 16),
                     _buildTextField(
                       controller: paperController,
-                      label: 'Paper Name',
+                      label: widget.mode == AppMode.classroom ? 'Classroom Subject' : 'Paper Name',
                       icon: Icons.description_outlined,
                     ),
-                    const SizedBox(height: 16),
-                    _buildTextField(
-                      controller: codeController,
-                      label: 'Exam Code',
-                      icon: Icons.code_rounded,
-                    ),
+                    if (widget.mode == AppMode.exam) ...[
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        controller: codeController,
+                        label: 'Exam Code',
+                        icon: Icons.code_rounded,
+                      ),
+                    ],
                   ] else ...[
                     const SizedBox(height: 16),
                     _buildTextField(
@@ -94,7 +100,11 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> with SingleTi
                         await LocalStorage.setUserName(nameController.text);
                         if (isTeacher) {
                           await LocalStorage.setPaperName(paperController.text);
-                          await LocalStorage.setExamCode(codeController.text);
+                          if (widget.mode == AppMode.exam) {
+                            await LocalStorage.setExamCode(codeController.text);
+                          } else {
+                            await LocalStorage.setExamCode('CLASSROOM');
+                          }
                         } else {
                           await LocalStorage.setRollNumber(rollController.text);
                         }
@@ -105,8 +115,13 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> with SingleTi
                         Navigator.push(
                           context,
                           PageRouteBuilder(
-                            pageBuilder: (context, animation, secondaryAnimation) => 
-                              isTeacher ? const TeacherDashboard() : const StudentDashboard(),
+                            pageBuilder: (context, animation, secondaryAnimation) {
+                              if (widget.mode == AppMode.classroom) {
+                                return isTeacher ? const ClassroomTeacherDashboard() : const ClassroomDiscoveryScreen();
+                              } else {
+                                return isTeacher ? const TeacherDashboard() : const StudentDashboard();
+                              }
+                            },
                             transitionsBuilder: (context, animation, secondaryAnimation, child) {
                               return FadeTransition(opacity: animation, child: child);
                             },

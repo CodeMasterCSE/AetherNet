@@ -121,3 +121,100 @@ class PaperTemplate {
     createdAt: DateTime.parse(json['createdAt']),
   );
 }
+
+// Classroom Mode Models
+
+class ChatMessage {
+  final String id;
+  final String senderName;
+  final String text;
+  final DateTime timestamp;
+
+  ChatMessage({required this.id, required this.senderName, required this.text, required this.timestamp});
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'senderName': senderName,
+    'text': text,
+    'timestamp': timestamp.toIso8601String(),
+  };
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
+    id: json['id'],
+    senderName: json['senderName'],
+    text: json['text'],
+    timestamp: DateTime.parse(json['timestamp']),
+  );
+}
+
+class WhiteboardPoint {
+  final double x;
+  final double y;
+  WhiteboardPoint(this.x, this.y);
+  Map<String, dynamic> toJson() => {'x': x, 'y': y};
+  factory WhiteboardPoint.fromJson(Map<String, dynamic> json) => WhiteboardPoint(json['x'].toDouble(), json['y'].toDouble());
+}
+
+class WhiteboardStroke {
+  final List<WhiteboardPoint> points;
+  final int colorValue;
+  final double strokeWidth;
+
+  WhiteboardStroke({required this.points, required this.colorValue, required this.strokeWidth});
+
+  Map<String, dynamic> toJson() => {
+    'points': points.map((p) => p.toJson()).toList(),
+    'colorValue': colorValue,
+    'strokeWidth': strokeWidth,
+  };
+
+  factory WhiteboardStroke.fromJson(Map<String, dynamic> json) => WhiteboardStroke(
+    points: (json['points'] as List).map((p) => WhiteboardPoint.fromJson(p)).toList(),
+    colorValue: json['colorValue'],
+    strokeWidth: json['strokeWidth'].toDouble(),
+  );
+}
+
+class Poll {
+  final String id;
+  final String question;
+  final List<String> options;
+
+  Poll({required this.id, required this.question, required this.options});
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'question': question,
+    'options': options,
+  };
+
+  factory Poll.fromJson(Map<String, dynamic> json) => Poll(
+    id: json['id'],
+    question: json['question'],
+    options: List<String>.from(json['options']),
+  );
+}
+
+class Assignment {
+  final String id;
+  final String title;
+  final String description;
+  final DateTime dueDate;
+
+  Assignment({required this.id, required this.title, required this.description, required this.dueDate});
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'description': description,
+    'dueDate': dueDate.toIso8601String(),
+  };
+
+  factory Assignment.fromJson(Map<String, dynamic> json) => Assignment(
+    id: json['id'],
+    title: json['title'],
+    description: json['description'],
+    dueDate: DateTime.parse(json['dueDate']),
+  );
+}
+
