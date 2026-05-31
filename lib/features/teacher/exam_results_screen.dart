@@ -97,7 +97,7 @@ class ExamResultsScreen extends ConsumerWidget {
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12.0),
                             child: GlassCard(
-                              color: sub.suspicionScore > 50 ? Colors.redAccent.withOpacity(0.1) : Colors.white.withValues(alpha: 0.05),
+                              color: sub.suspicionScore > 50 ? Colors.redAccent.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.05),
                               child: ListTile(
                                 leading: CircleAvatar(
                                   backgroundColor: rankColor.withValues(alpha: 0.2),
