@@ -5,8 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nearby_connections/nearby_connections.dart';
 import '../models/models.dart';
 import '../network/discovery_service.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import '../storage/local_storage.dart';
 import '../security/crypto_utils.dart';
+import '../models/resource.dart';
 
 final meshProvider = ChangeNotifierProvider(
     (ref) => MeshRouter(ref.watch(nearbyServiceProvider)));
@@ -40,6 +43,10 @@ class MeshRouter extends ChangeNotifier {
 
   // Connection Approval
   final List<ConnectionRequest> pendingRequests = [];
+
+  // File tracking
+  final Map<int, String> incomingFiles = {};
+  final Map<int, bool> completedTransfers = {};
 
   MeshRouter(this._nearbyService) {
     _initLocalNode();
@@ -135,11 +142,25 @@ class MeshRouter extends ChangeNotifier {
 
   void acceptRequest(String endpointId) {
     pendingRequests.removeWhere((r) => r.endpointId == endpointId);
-    _nearbyService.acceptConnection(endpointId, (id, payload) {
-      if (payload.type == PayloadType.BYTES) {
-        _handleIncomingData(endpointId, String.fromCharCodes(payload.bytes!));
-      }
-    });
+    _nearbyService.acceptConnection(
+      endpointId,
+      (id, payload) {
+        if (payload.type == PayloadType.BYTES) {
+          _handleIncomingData(endpointId, String.fromCharCodes(payload.bytes!));
+        } else if (payload.type == PayloadType.FILE) {
+          if (payload.uri != null) {
+            incomingFiles[payload.id] = payload.uri!;
+            debugPrint('File payload received: ${payload.uri}');
+          }
+        }
+      },
+      onPayloadTransferUpdate: (id, update) {
+        if (update.status == PayloadStatus.SUCCESS) {
+          completedTransfers[update.id] = true;
+          _processPendingResource(update.id);
+        }
+      },
+    );
     notifyListeners();
   }
 
@@ -165,11 +186,33 @@ class MeshRouter extends ChangeNotifier {
     }
   }
 
-  void _syncExistingMessagesToNewPeer(String endpointId) {
+  void _syncExistingMessagesToNewPeer(String endpointId) async {
     try {
       final allMessages = LocalStorage.getAllMessages();
-      for (final msgJson in allMessages) {
-        _nearbyService.sendPayload(endpointId, json.encode(msgJson));
+      allMessages.sort((a, b) => (a['timestamp'] ?? '').compareTo(b['timestamp'] ?? ''));
+
+      // Batch messages into chunks to avoid 32KB payload limits and buffer overflows
+      const int batchSize = 10;
+      for (int i = 0; i < allMessages.length; i += batchSize) {
+        final chunk = allMessages.skip(i).take(batchSize).toList();
+        
+        final syncPayload = json.encode({'messages': chunk});
+        final sig = CryptoUtils.generateHash(syncPayload);
+        
+        final syncMsg = MeshMessage(
+          id: '${LocalStorage.deviceId}-sync-$i-${DateTime.now().millisecondsSinceEpoch}',
+          senderId: LocalStorage.deviceId,
+          payload: syncPayload,
+          signature: sig,
+          hopCount: 10, // Prevent relaying of sync batches
+          type: 'SYNC_BATCH',
+          timestamp: DateTime.now(),
+        );
+
+        _nearbyService.sendPayload(endpointId, json.encode(syncMsg.toJson()));
+        
+        // Small delay to allow the network buffer to drain
+        await Future.delayed(const Duration(milliseconds: 100));
       }
     } catch (e) {
       debugPrint('[Mesh] Sync error: $e');
@@ -220,8 +263,25 @@ class MeshRouter extends ChangeNotifier {
         final durationMinutes = payload['duration'] as int;
         examEndTime = DateTime.now().add(Duration(minutes: durationMinutes));
         notifyListeners();
+      } else if (msg.type == 'SYNC_BATCH') {
+        final payload = json.decode(msg.payload);
+        final messages = payload['messages'] as List;
+        for (var m in messages) {
+           // Recursively process each message in the batch
+           _handleIncomingData(senderEndpoint, json.encode(m));
+        }
+        return; // Do not relay or save the batch wrapper itself
       } else if (msg.type == 'END_SESSION') {
         _handleEndSession();
+      } else if (msg.type == 'RESOURCE_SHARED_DIRECT') {
+        final payload = json.decode(msg.payload);
+        final pId = payload['payloadId'] as int;
+        
+        // Park it in _pendingResourceMsgs and let _processPendingResource handle the async copy
+        _pendingResourceMsgs[pId] = msg;
+        _processPendingResource(pId);
+        
+        return; // Don't relay direct messages
       } else {
         if (msg.type != 'IDENTITY') {
           LocalStorage.saveMessage(msg.id, jsonMsg);
@@ -270,6 +330,80 @@ class MeshRouter extends ChangeNotifier {
       LocalStorage.saveMessage(msg.id, msg.toJson());
     }
     _relayMessage(msg);
+  }
+
+  void broadcastFile(String filePath) {
+    for (var eid in connectedPeers.keys) {
+      _nearbyService.sendFilePayload(eid, filePath);
+    }
+  }
+
+  final Map<int, MeshMessage> _pendingResourceMsgs = {};
+
+  void _processPendingResource(int payloadId) async {
+    if (_pendingResourceMsgs.containsKey(payloadId) && 
+        incomingFiles.containsKey(payloadId) && 
+        completedTransfers.containsKey(payloadId)) {
+          
+      final msg = _pendingResourceMsgs.remove(payloadId)!;
+      final payload = json.decode(msg.payload);
+      final uri = incomingFiles[payloadId]!;
+      
+      try {
+        final docsDir = await getApplicationDocumentsDirectory();
+        final fileName = '${payloadId}_${payload['name']}';
+        final destFile = File('${docsDir.path}/$fileName');
+        
+        final success = await _nearbyService.copyFileAndDeleteOriginal(uri, destFile.path);
+        if (success) {
+          payload['path'] = destFile.path;
+        } else {
+          payload['path'] = uri;
+        }
+      } catch (e) {
+        debugPrint('Error copying received file: $e');
+        payload['path'] = uri;
+      }
+      
+      final newMsg = MeshMessage(
+        id: msg.id,
+        senderId: msg.senderId,
+        payload: json.encode(payload),
+        signature: msg.signature,
+        hopCount: msg.hopCount,
+        type: msg.type,
+        timestamp: msg.timestamp,
+      );
+      onMessageReceived?.call(newMsg);
+    }
+  }
+
+  Future<void> shareFile(String filePath, SharedResource resource) async {
+    for (var eid in connectedPeers.keys) {
+      try {
+        final payloadId = await _nearbyService.sendFilePayload(eid, filePath);
+        if (payloadId != -1) {
+          final resJson = resource.toJson();
+          resJson['payloadId'] = payloadId;
+          
+          final payloadStr = json.encode(resJson);
+          final sig = CryptoUtils.generateHash(payloadStr);
+          final msg = MeshMessage(
+            id: '${LocalStorage.deviceId}-${DateTime.now().millisecondsSinceEpoch}-$eid',
+            senderId: LocalStorage.deviceId,
+            payload: payloadStr,
+            signature: sig,
+            hopCount: 0,
+            type: 'RESOURCE_SHARED_DIRECT',
+            timestamp: DateTime.now(),
+          );
+          
+          _nearbyService.sendPayload(eid, json.encode(msg.toJson()));
+        }
+      } catch (e) {
+        debugPrint('Error sharing file to $eid: $e');
+      }
+    }
   }
 
   void _handleEndSession() async {

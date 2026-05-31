@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../features/teacher/teacher_dashboard.dart';
 import '../features/student/student_dashboard.dart';
-import '../features/teacher/classroom_teacher_dashboard.dart';
+import '../features/teacher/classroom_selection_screen.dart';
 import '../features/student/classroom_discovery_screen.dart';
 import '../widgets/glass_card.dart';
 import '../storage/local_storage.dart';
@@ -117,7 +117,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> with SingleTi
                           PageRouteBuilder(
                             pageBuilder: (context, animation, secondaryAnimation) {
                               if (widget.mode == AppMode.classroom) {
-                                return isTeacher ? const ClassroomTeacherDashboard() : const ClassroomDiscoveryScreen();
+                                return isTeacher ? const ClassroomSelectionScreen() : const ClassroomDiscoveryScreen();
                               } else {
                                 return isTeacher ? const TeacherDashboard() : const StudentDashboard();
                               }

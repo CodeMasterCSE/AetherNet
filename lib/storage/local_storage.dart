@@ -7,11 +7,13 @@ class LocalStorage {
   static late Box _settingsBox;
   static late Box _messagesBox;
   static late Box _templatesBox;
+  static late Box _classroomsBox;
 
   static Future<void> init() async {
     _settingsBox = await Hive.openBox('settings');
     _messagesBox = await Hive.openBox('messages');
     _templatesBox = await Hive.openBox('templates');
+    _classroomsBox = await Hive.openBox('classrooms');
 
     // Generate a unique device ID if not exists
     if (_settingsBox.get('deviceId') == null) {
@@ -80,5 +82,29 @@ class LocalStorage {
 
   static Future<void> deleteTemplate(String id) async {
     await _templatesBox.delete(id);
+  }
+
+  // ── Classrooms ──
+
+  static Future<void> saveClassroom(Classroom classroom) async {
+    await _classroomsBox.put(classroom.id, json.encode(classroom.toJson()));
+  }
+
+  static List<Classroom> getAllClassrooms() {
+    return _classroomsBox.values.map((e) {
+      return Classroom.fromJson(json.decode(e as String));
+    }).toList();
+  }
+
+  static Classroom? getClassroom(String id) {
+    final data = _classroomsBox.get(id);
+    if (data != null) {
+      return Classroom.fromJson(json.decode(data as String));
+    }
+    return null;
+  }
+
+  static Future<void> deleteClassroom(String id) async {
+    await _classroomsBox.delete(id);
   }
 }

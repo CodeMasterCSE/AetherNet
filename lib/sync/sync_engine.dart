@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../mesh/mesh_router.dart';
 import '../models/models.dart';
 import '../storage/local_storage.dart';
+import '../models/suspicion_score.dart';
+import '../models/resource.dart';
 
 import 'package:flutter/foundation.dart';
 
@@ -14,6 +16,7 @@ class SyncEngine extends ChangeNotifier {
   // Exam Mode State
   List<Question> activeQuestions = [];
   Map<String, String> studentAnswers = {};
+  Map<String, SubmissionEntity> examSubmissions = {}; // studentId -> SubmissionEntity
 
   // Classroom Mode State
   List<ChatMessage> chatMessages = [];
@@ -24,6 +27,8 @@ class SyncEngine extends ChangeNotifier {
   Map<String, DateTime> attendance = {}; // studentId -> last seen
   Set<String> raisedHands = {}; // studentIds
   String? lastEmergencyAlert;
+  Map<String, SuspicionReport> suspicionReports = {}; // studentId -> report
+  List<SharedResource> sharedResources = [];
 
   SyncEngine(this._router) {
     _router.onMessageReceived = _handleMessage;
@@ -51,6 +56,7 @@ class SyncEngine extends ChangeNotifier {
   void reset() {
     activeQuestions.clear();
     studentAnswers.clear();
+    examSubmissions.clear();
     chatMessages.clear();
     whiteboardStrokes.clear();
     activePolls.clear();
@@ -59,6 +65,8 @@ class SyncEngine extends ChangeNotifier {
     attendance.clear();
     raisedHands.clear();
     lastEmergencyAlert = null;
+    suspicionReports.clear();
+    sharedResources.clear();
     notifyListeners();
   }
 
@@ -83,13 +91,50 @@ class SyncEngine extends ChangeNotifier {
           studentAnswers['${payload['studentId']}_${payload['questionId']}'] = payload['answer'];
           break;
         case 'EXAM_SUBMITTED':
-          // Bulk update answers from final submission snapshot
-          if (payload['answers'] != null) {
-            final Map<String, dynamic> bulkAnswers = payload['answers'];
-            bulkAnswers.forEach((qId, ans) {
-              studentAnswers['${payload['studentId']}_$qId'] = ans.toString();
-            });
-          }
+          final studentId = payload['studentId'];
+          final studentName = payload['studentName'] ?? 'Unknown';
+          
+          final Map<String, dynamic> bulkAnswers = payload['answers'] ?? {};
+          final Map<String, String> answers = {};
+          
+          double score = 0;
+          double totalMarks = 0;
+
+          bulkAnswers.forEach((qId, ans) {
+            answers[qId] = ans.toString();
+            studentAnswers['${studentId}_$qId'] = ans.toString();
+
+            // Auto-evaluation logic
+            try {
+              final question = activeQuestions.firstWhere((q) => q.id == qId);
+              if (question.correctAnswer != null && question.correctAnswer!.isNotEmpty) {
+                totalMarks += question.marks;
+                if (question.correctAnswer == ans.toString()) {
+                  score += question.marks;
+                }
+              }
+            } catch (e) {
+              // Question not found in active list, ignore for evaluation
+            }
+          });
+
+          final suspicionScore = suspicionReports[studentId]?.score ?? 0;
+
+          examSubmissions[studentId] = SubmissionEntity(
+            id: '${studentId}_${DateTime.now().millisecondsSinceEpoch}',
+            studentId: studentId,
+            studentName: studentName,
+            examId: LocalStorage.examCode.isNotEmpty ? LocalStorage.examCode : 'CLASS_EXAM',
+            answers: answers,
+            score: score,
+            totalMarks: totalMarks,
+            suspicionScore: suspicionScore,
+            submittedAt: DateTime.parse(payload['timestamp'] ?? DateTime.now().toIso8601String()),
+          );
+          break;
+        case 'SUSPICION_UPDATE':
+          final report = SuspicionReport.fromJson(payload);
+          suspicionReports[report.studentId] = report;
           break;
         // Classroom Mode Events
         case 'CLASS_CHAT':
@@ -127,6 +172,10 @@ class SyncEngine extends ChangeNotifier {
           break;
         case 'EMERGENCY_ALERT':
           lastEmergencyAlert = payload['message'];
+          break;
+        case 'RESOURCE_SHARED':
+        case 'RESOURCE_SHARED_DIRECT':
+          sharedResources.add(SharedResource.fromJson(payload));
           break;
       }
     } catch (e) {
@@ -171,6 +220,20 @@ class SyncEngine extends ChangeNotifier {
       'timestamp': DateTime.now().toIso8601String(),
     });
     _router.broadcast('EXAM_SUBMITTED', payload);
+    notifyListeners();
+  }
+
+  void sendSuspicionUpdate(int bgOffenses, int faceOffenses, List<String> logs) {
+    final report = SuspicionReport(
+      studentId: LocalStorage.deviceId,
+      backgroundOffenses: bgOffenses,
+      faceOffenses: faceOffenses,
+      offenseLogs: logs,
+      lastUpdated: DateTime.now(),
+    );
+    final payload = json.encode(report.toJson());
+    _router.broadcast('SUSPICION_UPDATE', payload);
+    suspicionReports[LocalStorage.deviceId] = report;
     notifyListeners();
   }
 
@@ -252,6 +315,12 @@ class SyncEngine extends ChangeNotifier {
     final payload = json.encode({'message': message});
     _router.broadcast('EMERGENCY_ALERT', payload);
     lastEmergencyAlert = message;
+    notifyListeners();
+  }
+
+  void shareResource(SharedResource resource) {
+    _router.shareFile(resource.path, resource);
+    sharedResources.add(resource);
     notifyListeners();
   }
 }

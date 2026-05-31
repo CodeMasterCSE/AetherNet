@@ -43,3 +43,14 @@ android {
 flutter {
     source = "../.."
 }
+
+configurations.all {
+    resolutionStrategy {
+        force("androidx.camera:camera-core:1.5.0")
+        force("androidx.camera:camera-camera2:1.5.0")
+        force("androidx.camera:camera-lifecycle:1.5.0")
+        force("androidx.camera:camera-video:1.5.0")
+        force("androidx.camera:camera-view:1.5.0")
+        force("androidx.camera:camera-extensions:1.5.0")
+    }
+}

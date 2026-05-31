@@ -8,9 +8,12 @@ import '../../models/models.dart';
 import '../../storage/local_storage.dart';
 import '../../network/discovery_service.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../resources/resource_sharing_screen.dart';
 
 class ClassroomTeacherDashboard extends ConsumerStatefulWidget {
-  const ClassroomTeacherDashboard({super.key});
+  final Classroom classroom;
+  
+  const ClassroomTeacherDashboard({super.key, required this.classroom});
 
   @override
   ConsumerState<ClassroomTeacherDashboard> createState() => _ClassroomTeacherDashboardState();
@@ -35,8 +38,8 @@ class _ClassroomTeacherDashboardState extends ConsumerState<ClassroomTeacherDash
     await nearbyService.stopAll();
     ref.read(syncProvider).reset();
 
-    // Start advertising (no exam code needed for classroom)
-    final advertName = '${LocalStorage.userName}|${LocalStorage.paperName}';
+    // Start advertising using the persistent classroom name
+    final advertName = '${LocalStorage.userName}|${widget.classroom.name}';
     nearbyService.startAdvertising(
       advertName,
       mesh.handleConnectionInitiated,
@@ -203,7 +206,7 @@ class _ClassroomTeacherDashboardState extends ConsumerState<ClassroomTeacherDash
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          title: const Text('Classroom Session', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+          title: Text(widget.classroom.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
           actions: [
             IconButton(
               icon: const Icon(Icons.exit_to_app, color: Colors.white),
@@ -254,7 +257,7 @@ class _ClassroomTeacherDashboardState extends ConsumerState<ClassroomTeacherDash
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Classroom Session', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
+            Text(widget.classroom.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
             Text('${mesh.connectedPeers.length} Peers Connected', style: const TextStyle(fontSize: 12, color: Colors.greenAccent)),
           ],
         ),
@@ -441,23 +444,87 @@ class _ClassroomTeacherDashboardState extends ConsumerState<ClassroomTeacherDash
   }
 
   Widget _buildStudentsTab(MeshRouter mesh, SyncEngine sync) {
-    return ListView.builder(
+    final connectedIds = mesh.meshTopology.keys.where((id) => id != LocalStorage.deviceId).toList();
+    final enrolledIds = widget.classroom.enrolledStudentIds;
+
+    return ListView(
       padding: const EdgeInsets.all(16),
-      itemCount: mesh.meshTopology.keys.length,
-      itemBuilder: (context, index) {
-        final nodeId = mesh.meshTopology.keys.elementAt(index);
-        final name = mesh.nodeNames[nodeId] ?? 'Unknown';
-        final isRaised = sync.raisedHands.contains(nodeId);
-        if (nodeId == LocalStorage.deviceId) return const SizedBox.shrink(); // Skip self
-        return GlassCard(
-          child: ListTile(
-            leading: CircleAvatar(backgroundColor: Colors.greenAccent, child: Text(name[0], style: const TextStyle(color: Colors.black))),
-            title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            subtitle: Text('ID: $nodeId', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-            trailing: isRaised ? const Icon(Icons.pan_tool, color: Colors.amberAccent) : const Icon(Icons.check_circle, color: Colors.green),
+      children: [
+        const Text('Enrolled Roster', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        if (enrolledIds.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 16.0),
+            child: Text('No students enrolled yet. Add them from the connected peers below.', style: TextStyle(color: Colors.white54)),
           ),
-        ).animate().fadeIn().slideX();
-      },
+        ...enrolledIds.map((studentId) {
+          final isOnline = connectedIds.contains(studentId);
+          final name = isOnline ? mesh.nodeNames[studentId] ?? 'Unknown' : 'Offline Student';
+          final isRaised = sync.raisedHands.contains(studentId);
+          final suspicion = sync.suspicionReports[studentId];
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: GlassCard(
+              child: ListTile(
+                leading: CircleAvatar(backgroundColor: isOnline ? Colors.greenAccent : Colors.grey, child: Text(name[0], style: const TextStyle(color: Colors.black))),
+                title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(isOnline ? 'Online' : 'Offline', style: TextStyle(color: isOnline ? Colors.greenAccent : Colors.grey, fontSize: 12)),
+                    if (suspicion != null && suspicion.score > 0)
+                      Text('Suspicion: ${suspicion.score} (${suspicion.riskLevel})', style: TextStyle(color: suspicion.score > 50 ? Colors.redAccent : Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isRaised) const Icon(Icons.pan_tool, color: Colors.amberAccent),
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent),
+                      onPressed: () {
+                        setState(() {
+                          widget.classroom.enrolledStudentIds.remove(studentId);
+                          LocalStorage.saveClassroom(widget.classroom);
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+        
+        const Divider(height: 32, color: Colors.white24),
+        const Text('Connected Peers (Not Enrolled)', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        
+        ...connectedIds.where((id) => !enrolledIds.contains(id)).map((studentId) {
+          final name = mesh.nodeNames[studentId] ?? 'Unknown';
+          
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: GlassCard(
+              child: ListTile(
+                leading: CircleAvatar(backgroundColor: Colors.blueAccent, child: Text(name[0], style: const TextStyle(color: Colors.white))),
+                title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                subtitle: const Text('Online - Guest', style: TextStyle(color: Colors.blueAccent, fontSize: 12)),
+                trailing: IconButton(
+                  icon: const Icon(Icons.add_circle_outline, color: Colors.greenAccent),
+                  onPressed: () {
+                    setState(() {
+                      widget.classroom.enrolledStudentIds.add(studentId);
+                      LocalStorage.saveClassroom(widget.classroom);
+                    });
+                  },
+                ),
+              ),
+            ),
+          );
+        }),
+      ],
     );
   }
 
@@ -470,7 +537,9 @@ class _ClassroomTeacherDashboardState extends ConsumerState<ClassroomTeacherDash
       children: [
         _buildToolCard('Create Poll', Icons.poll, Colors.purpleAccent, _showPollDialog),
         _buildToolCard('Post Assignment', Icons.assignment, Colors.blueAccent, () {}),
-        _buildToolCard('Share File', Icons.file_present, Colors.greenAccent, () {}),
+        _buildToolCard('Share File', Icons.file_present, Colors.greenAccent, () {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const ResourceSharingScreen()));
+        }),
         _buildToolCard('Attendance', Icons.people_alt, Colors.orangeAccent, () {}),
       ],
     );

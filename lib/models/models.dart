@@ -124,6 +124,38 @@ class PaperTemplate {
 
 // Classroom Mode Models
 
+class Classroom {
+  final String id;
+  final String name;
+  final String teacherId;
+  final List<String> enrolledStudentIds;
+  final DateTime createdAt;
+
+  Classroom({
+    required this.id,
+    required this.name,
+    required this.teacherId,
+    required this.enrolledStudentIds,
+    required this.createdAt,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'teacherId': teacherId,
+    'enrolledStudentIds': enrolledStudentIds,
+    'createdAt': createdAt.toIso8601String(),
+  };
+
+  factory Classroom.fromJson(Map<String, dynamic> json) => Classroom(
+    id: json['id'],
+    name: json['name'],
+    teacherId: json['teacherId'],
+    enrolledStudentIds: List<String>.from(json['enrolledStudentIds'] ?? []),
+    createdAt: DateTime.parse(json['createdAt']),
+  );
+}
+
 class ChatMessage {
   final String id;
   final String senderName;
@@ -215,6 +247,54 @@ class Assignment {
     title: json['title'],
     description: json['description'],
     dueDate: DateTime.parse(json['dueDate']),
+  );
+}
+
+class SubmissionEntity {
+  final String id;
+  final String studentId;
+  final String studentName;
+  final String examId;
+  final Map<String, String> answers;
+  final double? score;
+  final double? totalMarks;
+  final int suspicionScore;
+  final DateTime submittedAt;
+
+  SubmissionEntity({
+    required this.id,
+    required this.studentId,
+    required this.studentName,
+    required this.examId,
+    required this.answers,
+    this.score,
+    this.totalMarks,
+    required this.suspicionScore,
+    required this.submittedAt,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'studentId': studentId,
+    'studentName': studentName,
+    'examId': examId,
+    'answers': answers,
+    'score': score,
+    'totalMarks': totalMarks,
+    'suspicionScore': suspicionScore,
+    'submittedAt': submittedAt.toIso8601String(),
+  };
+
+  factory SubmissionEntity.fromJson(Map<String, dynamic> json) => SubmissionEntity(
+    id: json['id'],
+    studentId: json['studentId'],
+    studentName: json['studentName'] ?? 'Unknown',
+    examId: json['examId'],
+    answers: Map<String, String>.from(json['answers'] ?? {}),
+    score: json['score'] != null ? (json['score'] as num).toDouble() : null,
+    totalMarks: json['totalMarks'] != null ? (json['totalMarks'] as num).toDouble() : null,
+    suspicionScore: json['suspicionScore'] ?? 0,
+    submittedAt: DateTime.parse(json['submittedAt']),
   );
 }
 

@@ -8,6 +8,10 @@ import '../../models/models.dart';
 import 'package:flutter/services.dart';
 import 'package:kiosk_mode/kiosk_mode.dart';
 import '../../storage/local_storage.dart';
+import 'dart:math';
+import 'dart:io';
+import 'package:camera/camera.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
 class ExamTakingScreen extends ConsumerStatefulWidget {
   const ExamTakingScreen({super.key});
@@ -21,17 +25,107 @@ class _ExamTakingScreenState extends ConsumerState<ExamTakingScreen> with Widget
   int _backgroundOffenses = 0;
   static const _anticheatChannel = MethodChannel('meshexam/anticheat');
 
+  CameraController? _cameraController;
+  FaceDetector? _faceDetector;
+  bool _isDetecting = false;
+  DateTime _lastDetectionTime = DateTime.now();
+  int _faceOffenses = 0;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _enableAntiCheat();
+    _initCameraAndFaceDetection();
+  }
+
+  Future<void> _initCameraAndFaceDetection() async {
+    try {
+      final cameras = await availableCameras();
+      final frontCamera = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+
+      _cameraController = CameraController(
+        frontCamera,
+        ResolutionPreset.low,
+        enableAudio: false,
+        imageFormatGroup: Platform.isAndroid ? ImageFormatGroup.nv21 : ImageFormatGroup.bgra8888,
+      );
+
+      await _cameraController!.initialize();
+
+      _faceDetector = FaceDetector(
+        options: FaceDetectorOptions(
+          enableContours: false,
+          enableLandmarks: false,
+          enableClassification: false,
+          enableTracking: false,
+          performanceMode: FaceDetectorMode.fast,
+        ),
+      );
+
+      _cameraController!.startImageStream((CameraImage image) async {
+        if (_isDetecting || _isSubmitted) return;
+        final now = DateTime.now();
+        if (now.difference(_lastDetectionTime).inSeconds < 3) return; // Process every 3 seconds
+        
+        _isDetecting = true;
+        _lastDetectionTime = now;
+
+        try {
+          final WriteBuffer allBytes = WriteBuffer();
+          for (final Plane plane in image.planes) {
+            allBytes.putUint8List(plane.bytes);
+          }
+          final bytes = allBytes.done().buffer.asUint8List();
+
+          final metadata = InputImageMetadata(
+            size: Size(image.width.toDouble(), image.height.toDouble()),
+            rotation: InputImageRotationValue.fromRawValue(frontCamera.sensorOrientation) ?? InputImageRotation.rotation0deg,
+            format: InputImageFormatValue.fromRawValue(image.format.raw) ?? InputImageFormat.nv21,
+            bytesPerRow: image.planes[0].bytesPerRow,
+          );
+
+          final inputImage = InputImage.fromBytes(bytes: bytes, metadata: metadata);
+          final faces = await _faceDetector!.processImage(inputImage);
+
+          if (faces.isEmpty) {
+            _logFaceViolation('No face detected in camera frame.');
+          } else if (faces.length > 1) {
+            _logFaceViolation('Multiple faces detected (${faces.length}) in camera frame.');
+          }
+        } catch (e) {
+          debugPrint('Face detection error: $e');
+        } finally {
+          _isDetecting = false;
+        }
+      });
+    } catch (e) {
+      debugPrint('Camera init error: $e');
+    }
+  }
+
+  void _logFaceViolation(String reason) {
+    if (_isSubmitted || !mounted) return;
+    _faceOffenses++;
+    final sync = ref.read(syncProvider);
+    final currentLogs = sync.suspicionReports[LocalStorage.deviceId]?.offenseLogs ?? [];
+    
+    // Add 10 suspicion points per face offense
+    sync.sendSuspicionUpdate(
+      _backgroundOffenses, 
+      _faceOffenses,
+      [...currentLogs, '$reason at ${DateTime.now().toIso8601String()}']
+    );
   }
 
   Future<void> _enableAntiCheat() async {
     try {
       await startKioskMode();
       await _anticheatChannel.invokeMethod('setSecureFlag');
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     } catch (e) {
       debugPrint('Failed to enable anti-cheat: $e');
     }
@@ -41,6 +135,7 @@ class _ExamTakingScreenState extends ConsumerState<ExamTakingScreen> with Widget
     try {
       await stopKioskMode();
       await _anticheatChannel.invokeMethod('clearSecureFlag');
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     } catch (e) {
       debugPrint('Failed to disable anti-cheat: $e');
     }
@@ -50,6 +145,8 @@ class _ExamTakingScreenState extends ConsumerState<ExamTakingScreen> with Widget
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _disableAntiCheat();
+    _cameraController?.dispose();
+    _faceDetector?.close();
     super.dispose();
   }
 
@@ -60,14 +157,15 @@ class _ExamTakingScreenState extends ConsumerState<ExamTakingScreen> with Widget
     if (state == AppLifecycleState.paused) {
       // User sent app to background
       _backgroundOffenses++;
+      final sync = ref.read(syncProvider);
+      final currentLogs = sync.suspicionReports[LocalStorage.deviceId]?.offenseLogs ?? [];
+      sync.sendSuspicionUpdate(
+        _backgroundOffenses, 
+        _faceOffenses,
+        [...currentLogs, 'App sent to background at ${DateTime.now().toIso8601String()}']
+      );
     } else if (state == AppLifecycleState.resumed && _backgroundOffenses > 0) {
-      if (_backgroundOffenses == 1) {
-        // First offense: Warning
-        _showWarningDialog();
-      } else {
-        // Second offense: Terminate & Auto-Submit
-        _terminateAndSubmit();
-      }
+      _showWarningDialog();
     }
   }
 
@@ -81,12 +179,12 @@ class _ExamTakingScreenState extends ConsumerState<ExamTakingScreen> with Widget
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent),
             SizedBox(width: 8),
-            Text('WARNING', style: TextStyle(color: Colors.white)),
+            Text('WARNING LOGGED', style: TextStyle(color: Colors.white)),
           ],
         ),
-        content: const Text(
-          'You have navigated away from the exam screen.\n\nThis is a violation of exam rules. A second offense will result in automatic termination and submission of your exam.',
-          style: TextStyle(color: Colors.white70),
+        content: Text(
+          'You have navigated away from the exam screen.\n\nThis is a violation of exam rules. Your suspicion score has been updated to ${_backgroundOffenses * 30} and the teacher has been notified.',
+          style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           ElevatedButton(
@@ -99,36 +197,20 @@ class _ExamTakingScreenState extends ConsumerState<ExamTakingScreen> with Widget
     );
   }
 
-  void _terminateAndSubmit() {
-    setState(() => _isSubmitted = true);
-    final sync = ref.read(syncProvider);
-    sync.submitFinalExam();
-    
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
-        title: const Row(
-          children: [
-            Icon(Icons.gavel_rounded, color: Colors.redAccent),
-            SizedBox(width: 8),
-            Text('EXAM TERMINATED', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: const Text(
-          'You have repeatedly violated the exam rules by switching apps.\n\nYour exam has been automatically submitted and terminated.',
-          style: TextStyle(color: Colors.white),
-        ),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            onPressed: () => Navigator.popUntil(context, (route) => route.isFirst),
-            child: const Text('Exit', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
+  // terminateAndSubmit removed as per phase 3 score update rules
+
+  List<Question> _getShuffledQuestions(List<Question> original) {
+    final r = Random(LocalStorage.deviceId.hashCode);
+    final copy = List<Question>.from(original);
+    copy.shuffle(r);
+    return copy;
+  }
+
+  List<String> _getShuffledOptions(Question q) {
+    final r = Random(LocalStorage.deviceId.hashCode ^ q.id.hashCode);
+    final copy = List<String>.from(q.options);
+    copy.shuffle(r);
+    return copy;
   }
 
   @override
@@ -213,7 +295,8 @@ class _ExamTakingScreenState extends ConsumerState<ExamTakingScreen> with Widget
                   padding: const EdgeInsets.all(16),
                   itemCount: sync.activeQuestions.length,
                   itemBuilder: (context, index) {
-                    final q = sync.activeQuestions[index];
+                    final shuffledQs = _getShuffledQuestions(sync.activeQuestions);
+                    final q = shuffledQs[index];
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 16.0),
                       child: GlassCard(
@@ -350,8 +433,9 @@ class _ExamTakingScreenState extends ConsumerState<ExamTakingScreen> with Widget
     switch (q.type) {
       case QuestionType.scq:
         final currentValue = sync.studentAnswers['${LocalStorage.deviceId}_${q.id}'] ?? '';
+        final shuffledOptions = _getShuffledOptions(q);
         return Column(
-          children: q.options.map((option) {
+          children: shuffledOptions.map((option) {
             final isSelected = currentValue == option;
             return InkWell(
               onTap: () {
@@ -378,8 +462,9 @@ class _ExamTakingScreenState extends ConsumerState<ExamTakingScreen> with Widget
 
       case QuestionType.mcq:
         final selectedOptions = (sync.studentAnswers['${LocalStorage.deviceId}_${q.id}'] ?? '').split(',');
+        final shuffledOptions = _getShuffledOptions(q);
         return Column(
-          children: q.options.map((option) {
+          children: shuffledOptions.map((option) {
             final isSelected = selectedOptions.contains(option);
             return CheckboxListTile(
               title: Text(option, style: const TextStyle(color: Colors.white70)),

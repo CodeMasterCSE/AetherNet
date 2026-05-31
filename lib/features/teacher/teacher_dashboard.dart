@@ -4,6 +4,7 @@ import '../../storage/local_storage.dart';
 import '../../widgets/glass_card.dart';
 import 'create_exam_screen.dart';
 import 'question_bank_screen.dart';
+import 'exam_results_screen.dart';
 import '../network_visualizer.dart';
 
 class TeacherDashboard extends StatelessWidget {
@@ -110,6 +111,16 @@ class TeacherDashboard extends StatelessWidget {
                   color: Colors.indigoAccent,
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NetworkVisualizerScreen())),
                 ).animate().fadeIn(delay: 400.ms).slideX(begin: 0.1, end: 0),
+
+                const SizedBox(height: 16),
+
+                _buildActionButton(
+                  context: context,
+                  label: 'View Exam Results',
+                  icon: Icons.assignment_turned_in_rounded,
+                  color: Colors.greenAccent,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ExamResultsScreen())),
+                ).animate().fadeIn(delay: 450.ms).slideX(begin: 0.1, end: 0),
 
                 const Spacer(),
                 

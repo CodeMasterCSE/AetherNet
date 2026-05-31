@@ -109,13 +109,14 @@ class NearbyDiscoveryService {
 
   Future<void> acceptConnection(
     String endpointId,
-    void Function(String, Payload) onPayloadReceived,
-  ) async {
+    void Function(String, Payload) onPayloadReceived, {
+    void Function(String, PayloadTransferUpdate)? onPayloadTransferUpdate,
+  }) async {
     try {
       await Nearby().acceptConnection(
         endpointId,
         onPayLoadRecieved: onPayloadReceived,
-        onPayloadTransferUpdate: (id, PayloadTransferUpdate update) {},
+        onPayloadTransferUpdate: onPayloadTransferUpdate ?? (id, update) {},
       );
     } catch (e) {
       debugPrint('[Nearby] Error accepting connection: $e');
@@ -134,6 +135,24 @@ class NearbyDiscoveryService {
       );
     } catch (e) {
       debugPrint('[Nearby] Error sending payload: $e');
+    }
+  }
+
+  Future<int> sendFilePayload(String endpointId, String filePath) async {
+    try {
+      return await Nearby().sendFilePayload(endpointId, filePath);
+    } catch (e) {
+      debugPrint('[Nearby] Error sending file payload: $e');
+      return -1;
+    }
+  }
+
+  Future<bool> copyFileAndDeleteOriginal(String sourceUri, String destinationFilepath) async {
+    try {
+      return await Nearby().copyFileAndDeleteOriginal(sourceUri, destinationFilepath);
+    } catch (e) {
+      debugPrint('[Nearby] Error copying file: $e');
+      return false;
     }
   }
 

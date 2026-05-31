@@ -7,6 +7,7 @@ import '../../models/models.dart';
 import '../../storage/local_storage.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../teacher/classroom_teacher_dashboard.dart'; // For WhiteboardPainter
+import '../resources/resource_sharing_screen.dart';
 
 class ClassroomStudentDashboard extends ConsumerStatefulWidget {
   const ClassroomStudentDashboard({super.key});
@@ -115,6 +116,13 @@ class _ClassroomStudentDashboardState extends ConsumerState<ClassroomStudentDash
               }
             },
             tooltip: 'Raise Hand',
+          ),
+          IconButton(
+            icon: const Icon(Icons.folder_shared, color: Colors.blueAccent),
+            onPressed: () {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const ResourceSharingScreen()));
+            },
+            tooltip: 'Shared Resources',
           ),
           IconButton(
             icon: const Icon(Icons.exit_to_app, color: Colors.white),
